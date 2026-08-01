@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Department Queue · Complaint Management System</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%276%27 fill=%27%23223247%27/%3E%3Ccircle cx=%2716%27 cy=%2716%27 r=%275%27 fill=%27%23c1893f%27/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="app-header">
+  <div class="brand">Complaint Management <span class="role-pill">Staff</span></div>
+  <div class="user-info">
+    <span id="userName"></span>
+    <button class="btn btn-secondary btn-sm" onclick="logout()">Log Out</button>
+  </div>
+</header>
+
+<main class="app-main">
+  <h1 class="page-title" id="pageTitle">Department Queue</h1>
+  <p class="page-subtitle" id="pageSubtitle"></p>
+
+  <div class="panel">
+    <div class="panel-header">
+      <h2>Complaints assigned to your department</h2>
+      <div class="toolbar">
+        <select id="statusFilter">
+          <option value="">All statuses</option>
+          <option>Open</option>
+          <option>In Progress</option>
+          <option>Resolved</option>
+          <option>Rejected</option>
+        </select>
+      </div>
+    </div>
+    <div id="complaintList"></div>
+  </div>
+</main>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal()">&times;</button>
+    <div id="modalContent"></div>
+  </div>
+</div>
+
+<script src="js/api.js"></script>
+<script>
+  const user = requireRole('staff');
+  document.getElementById('userName').textContent = user ? user.name : '';
+  document.getElementById('pageSubtitle').textContent =
+    user ? `Complaints in the ${user.department} category route to you.` : '';
+
+  let allComplaints = [];
+
+  async function loadComplaints() {
+    try {
+      const data = await apiRequest('/complaints');
+      allComplaints = data.complaints;
+      renderList();
+    } catch (err) {
+      document.getElementById('complaintList').innerHTML =
+        `<div class="empty-state">Couldn't load complaints: ${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  function renderList() {
+    const filter = document.getElementById('statusFilter').value;
+    const list = filter ? allComplaints.filter(c => c.status === filter) : allComplaints;
+    const container = document.getElementById('complaintList');
+
+    if (list.length === 0) {
+      container.innerHTML = `<div class="empty-state">Nothing here ${filter ? 'with this status' : 'right now'} — the queue is clear.</div>`;
+      return;
+    }
+
+    container.innerHTML = list.map(c => `
+      <div class="complaint-row" onclick="openModal('${c._id}')">
+        <div class="complaint-main">
+          <div class="title">${escapeHtml(c.title)}</div>
+          <div class="meta">Filed by ${escapeHtml(c.createdBy?.name || 'Unknown')} on ${formatDate(c.createdAt)}</div>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <span class="badge ${priorityBadgeClass(c.priority)}">${c.priority}</span>
+          <span class="badge ${statusBadgeClass(c.status)}">${c.status}</span>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  document.getElementById('statusFilter').addEventListener('change', renderList);
+
+  async function openModal(id) {
+    try {
+      const data = await apiRequest(`/complaints/${id}`);
+      const c = data.complaint;
+      document.getElementById('modalContent').innerHTML = `
+        <h2 style="margin-top:0;">${escapeHtml(c.title)}</h2>
+        <p style="display:flex; gap:8px; margin-bottom:16px;">
+          <span class="badge ${statusBadgeClass(c.status)}">${c.status}</span>
+          <span class="badge ${priorityBadgeClass(c.priority)}">${c.priority} priority</span>
+        </p>
+        <p style="color:var(--slate); font-size:13px;">Filed by ${escapeHtml(c.createdBy?.name || 'Unknown')} (${escapeHtml(c.createdBy?.email || '')}) on ${formatDate(c.createdAt)}</p>
+        <p style="margin: 16px 0; line-height:1.5;">${escapeHtml(c.description)}</p>
+
+        <form id="statusForm" style="background:var(--paper); padding:14px; border-radius:6px; margin-bottom:20px;">
+          <div class="field">
+            <label for="statusSelect">Update status</label>
+            <select id="statusSelect">
+              <option ${c.status === 'Open' ? 'selected' : ''}>Open</option>
+              <option ${c.status === 'In Progress' ? 'selected' : ''}>In Progress</option>
+              <option ${c.status === 'Resolved' ? 'selected' : ''}>Resolved</option>
+              <option ${c.status === 'Rejected' ? 'selected' : ''}>Rejected</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="resolutionNote">Resolution note (optional)</label>
+            <textarea id="resolutionNote" rows="2" placeholder="Notes visible to the complainant">${escapeHtml(c.resolutionNote || '')}</textarea>
+          </div>
+          <button type="submit" class="btn btn-primary" style="width:auto; padding:8px 16px;">Save Update</button>
+        </form>
+
+        <h3 style="font-size:14px;">Comments</h3>
+        <div id="commentsList">
+          ${c.comments.length === 0 ? '<p style="color:var(--slate); font-size:13px;">No comments yet.</p>' :
+            c.comments.map(cm => `
+              <div class="comment-item">
+                <div class="who">${escapeHtml(cm.authorName)}</div>
+                <div>${escapeHtml(cm.message)}</div>
+                <div class="when">${formatDate(cm.createdAt)}</div>
+              </div>
+            `).join('')}
+        </div>
+        <form id="commentForm" style="margin-top:14px; display:flex; gap:8px;">
+          <input type="text" id="commentText" placeholder="Add a comment..." style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:6px;" required>
+          <button type="submit" class="btn btn-primary" style="width:auto; padding:8px 16px;">Post</button>
+        </form>
+      `;
+
+      document.getElementById('statusForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const status = document.getElementById('statusSelect').value;
+        const resolutionNote = document.getElementById('resolutionNote').value.trim();
+        try {
+          await apiRequest(`/complaints/${id}/status`, { method: 'PATCH', body: { status, resolutionNote } });
+          openModal(id);
+          loadComplaints();
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
+      document.getElementById('commentForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const text = document.getElementById('commentText').value.trim();
+        if (!text) return;
+        await apiRequest(`/complaints/${id}/comments`, { method: 'POST', body: { message: text } });
+        openModal(id);
+      });
+
+      document.getElementById('modalOverlay').classList.add('show');
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  function closeModal() {
+    document.getElementById('modalOverlay').classList.remove('show');
+  }
+
+  loadComplaints();
+</script>
+</body>
+</html>
