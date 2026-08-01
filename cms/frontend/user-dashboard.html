@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My Complaints · Complaint Management System</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%276%27 fill=%27%23223247%27/%3E%3Ccircle cx=%2716%27 cy=%2716%27 r=%275%27 fill=%27%23c1893f%27/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="app-header">
+  <div class="brand">Complaint Management <span class="role-pill">User</span></div>
+  <div class="user-info">
+    <span id="userName"></span>
+    <button class="btn btn-secondary btn-sm" onclick="logout()">Log Out</button>
+  </div>
+</header>
+
+<main class="app-main">
+  <h1 class="page-title">My Complaints</h1>
+  <p class="page-subtitle">Submit a new complaint or track the status of ones you've already filed.</p>
+
+  <div class="panel" style="margin-bottom: 24px;">
+    <div class="panel-header"><h2>Submit a new complaint</h2></div>
+    <form id="newComplaintForm" style="padding: 20px;">
+      <div class="error-msg" id="formError"></div>
+      <div class="field">
+        <label for="title">Title</label>
+        <input type="text" id="title" required placeholder="Short summary of the issue">
+      </div>
+      <div class="field">
+        <label for="description">Description</label>
+        <textarea id="description" rows="4" required placeholder="Explain what happened in detail"></textarea>
+      </div>
+      <div style="display:flex; gap:14px;">
+        <div class="field" style="flex:1;">
+          <label for="category">Category</label>
+          <select id="category" required>
+            <option value="">Select category</option>
+            <option>Billing</option>
+            <option>Technical</option>
+            <option>Service Quality</option>
+            <option>HR</option>
+            <option>General</option>
+          </select>
+        </div>
+        <div class="field" style="flex:1;">
+          <label for="priority">Priority</label>
+          <select id="priority">
+            <option>Low</option>
+            <option selected>Medium</option>
+            <option>High</option>
+            <option>Urgent</option>
+          </select>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary" id="submitBtn" style="width:auto; padding:10px 20px;">Submit Complaint</button>
+    </form>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      <h2>Complaint history</h2>
+      <div class="toolbar">
+        <select id="statusFilter">
+          <option value="">All statuses</option>
+          <option>Open</option>
+          <option>In Progress</option>
+          <option>Resolved</option>
+          <option>Rejected</option>
+        </select>
+      </div>
+    </div>
+    <div id="complaintList"></div>
+  </div>
+</main>
+
+<!-- Detail modal -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal()">&times;</button>
+    <div id="modalContent"></div>
+  </div>
+</div>
+
+<script src="js/api.js"></script>
+<script>
+  const user = requireRole('user');
+  document.getElementById('userName').textContent = user ? user.name : '';
+
+  let allComplaints = [];
+
+  async function loadComplaints() {
+    try {
+      const data = await apiRequest('/complaints');
+      allComplaints = data.complaints;
+      renderList();
+    } catch (err) {
+      document.getElementById('complaintList').innerHTML =
+        `<div class="empty-state">Couldn't load your complaints: ${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  function renderList() {
+    const filter = document.getElementById('statusFilter').value;
+    const list = filter ? allComplaints.filter(c => c.status === filter) : allComplaints;
+    const container = document.getElementById('complaintList');
+
+    if (list.length === 0) {
+      container.innerHTML = `<div class="empty-state">No complaints ${filter ? 'with this status' : 'yet'} — use the form above to file one.</div>`;
+      return;
+    }
+
+    container.innerHTML = list.map(c => `
+      <div class="complaint-row" onclick="openModal('${c._id}')">
+        <div class="complaint-main">
+          <div class="title">${escapeHtml(c.title)}</div>
+          <div class="meta">${escapeHtml(c.category)} · Filed ${formatDate(c.createdAt)}</div>
+        </div>
+        <span class="badge ${statusBadgeClass(c.status)}">${c.status}</span>
+      </div>
+    `).join('');
+  }
+
+  document.getElementById('statusFilter').addEventListener('change', renderList);
+
+  document.getElementById('newComplaintForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formError = document.getElementById('formError');
+    formError.classList.remove('show');
+    const submitBtn = document.getElementById('submitBtn');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Submitting...';
+
+    try {
+      const body = {
+        title: document.getElementById('title').value.trim(),
+        description: document.getElementById('description').value.trim(),
+        category: document.getElementById('category').value,
+        priority: document.getElementById('priority').value,
+      };
+      await apiRequest('/complaints', { method: 'POST', body });
+      e.target.reset();
+      await loadComplaints();
+    } catch (err) {
+      formError.textContent = err.message;
+      formError.classList.add('show');
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Submit Complaint';
+    }
+  });
+
+  async function openModal(id) {
+    try {
+      const data = await apiRequest(`/complaints/${id}`);
+      const c = data.complaint;
+      document.getElementById('modalContent').innerHTML = `
+        <h2 style="margin-top:0;">${escapeHtml(c.title)}</h2>
+        <p style="display:flex; gap:8px; margin-bottom:16px;">
+          <span class="badge ${statusBadgeClass(c.status)}">${c.status}</span>
+          <span class="badge ${priorityBadgeClass(c.priority)}">${c.priority} priority</span>
+        </p>
+        <p style="color:var(--slate); font-size:13px;">Category: ${escapeHtml(c.category)} · Filed ${formatDate(c.createdAt)}</p>
+        <p style="margin: 16px 0; line-height:1.5;">${escapeHtml(c.description)}</p>
+        ${c.resolutionNote ? `<div class="comment-item"><div class="who">Resolution note</div>${escapeHtml(c.resolutionNote)}</div>` : ''}
+        <h3 style="font-size:14px; margin-top:24px;">Comments</h3>
+        <div id="commentsList">
+          ${c.comments.length === 0 ? '<p style="color:var(--slate); font-size:13px;">No comments yet.</p>' :
+            c.comments.map(cm => `
+              <div class="comment-item">
+                <div class="who">${escapeHtml(cm.authorName)}</div>
+                <div>${escapeHtml(cm.message)}</div>
+                <div class="when">${formatDate(cm.createdAt)}</div>
+              </div>
+            `).join('')}
+        </div>
+        <form id="commentForm" style="margin-top:14px; display:flex; gap:8px;">
+          <input type="text" id="commentText" placeholder="Add a comment..." style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:6px;" required>
+          <button type="submit" class="btn btn-primary" style="width:auto; padding:8px 16px;">Post</button>
+        </form>
+      `;
+      document.getElementById('commentForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const text = document.getElementById('commentText').value.trim();
+        if (!text) return;
+        await apiRequest(`/complaints/${id}/comments`, { method: 'POST', body: { message: text } });
+        openModal(id);
+        loadComplaints();
+      });
+      document.getElementById('modalOverlay').classList.add('show');
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  function closeModal() {
+    document.getElementById('modalOverlay').classList.remove('show');
+  }
+
+  loadComplaints();
+</script>
+</body>
+</html>
