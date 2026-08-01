@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin Dashboard · Scholarship Management System</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%276%27 fill=%27%23223247%27/%3E%3Ccircle cx=%2716%27 cy=%2716%27 r=%275%27 fill=%27%23c1893f%27/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="app-header">
+  <div class="brand">Scholarship Management <span class="role-pill">Admin</span></div>
+  <div class="user-info">
+    <span id="userName"></span>
+    <button class="btn btn-secondary btn-sm" onclick="logout()">Log Out</button>
+  </div>
+</header>
+
+<main class="app-main">
+  <h1 class="page-title">Admin Dashboard</h1>
+  <p class="page-subtitle">Manage scholarship listings and review student applications.</p>
+
+  <div class="stats-grid" id="statsGrid"></div>
+
+  <div style="display:flex; gap:8px; margin-bottom:16px;">
+    <button class="btn btn-secondary" id="tabScholarships">Scholarships</button>
+    <button class="btn btn-secondary" id="tabApplications">Applications</button>
+  </div>
+
+  <!-- Scholarships tab -->
+  <div id="scholarshipsTab" class="panel">
+    <div class="panel-header">
+      <h2>Scholarship listings</h2>
+      <button class="btn btn-primary" style="width:auto; padding:8px 16px;" onclick="openNewScholarshipForm()">+ New Scholarship</button>
+    </div>
+    <div id="scholarshipList"></div>
+  </div>
+
+  <!-- Applications tab -->
+  <div id="applicationsTab" class="panel hidden">
+    <div class="panel-header">
+      <h2>Applications</h2>
+      <div class="toolbar">
+        <select id="statusFilter">
+          <option value="">All statuses</option>
+          <option>Pending</option>
+          <option>Under Review</option>
+          <option>Approved</option>
+          <option>Rejected</option>
+        </select>
+      </div>
+    </div>
+    <div id="applicationList"></div>
+  </div>
+</main>
+
+<!-- New/edit scholarship modal -->
+<div class="modal-overlay" id="scholarshipOverlay">
+  <div class="modal">
+    <button class="modal-close" onclick="closeScholarshipForm()">&times;</button>
+    <h2 style="margin-top:0;" id="scholarshipFormTitle">New scholarship</h2>
+    <div class="error-msg" id="scholarshipError"></div>
+    <form id="scholarshipForm">
+      <input type="hidden" id="scholarshipId">
+      <div class="field">
+        <label for="title">Title</label>
+        <input type="text" id="title" required>
+      </div>
+      <div class="field">
+        <label for="description">Description</label>
+        <textarea id="description" rows="3" required></textarea>
+      </div>
+      <div style="display:flex; gap:14px;">
+        <div class="field" style="flex:1;">
+          <label for="category">Category</label>
+          <select id="category" required>
+            <option>Merit</option>
+            <option>Need-Based</option>
+            <option>Sports</option>
+            <option>Minority</option>
+            <option>Research</option>
+            <option>General</option>
+          </select>
+        </div>
+        <div class="field" style="flex:1;">
+          <label for="amount">Amount</label>
+          <input type="number" id="amount" min="0" required>
+        </div>
+      </div>
+      <div style="display:flex; gap:14px;">
+        <div class="field" style="flex:1;">
+          <label for="minAcademicScore">Min academic score (%)</label>
+          <input type="number" id="minAcademicScore" min="0" max="100" required>
+        </div>
+        <div class="field" style="flex:1;">
+          <label for="maxFamilyIncome">Max family income</label>
+          <input type="number" id="maxFamilyIncome" min="0" required>
+        </div>
+      </div>
+      <div class="field">
+        <label for="deadline">Application deadline</label>
+        <input type="date" id="deadline" required>
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:auto; padding:8px 16px;" id="scholarshipSubmitBtn">Save Scholarship</button>
+    </form>
+  </div>
+</div>
+
+<!-- Application review modal -->
+<div class="modal-overlay" id="reviewOverlay">
+  <div class="modal">
+    <button class="modal-close" onclick="closeReviewModal()">&times;</button>
+    <div id="reviewContent"></div>
+  </div>
+</div>
+
+<script src="js/api.js"></script>
+<script>
+  const user = requireRole('admin');
+  document.getElementById('userName').textContent = user ? user.name : '';
+
+  let allScholarships = [];
+  let allApplications = [];
+
+  async function loadStats() {
+    try {
+      const data = await apiRequest('/applications/stats/overview');
+      const statusMap = Object.fromEntries(data.byStatus.map(s => [s._id, s.count]));
+      document.getElementById('statsGrid').innerHTML = `
+        <div class="stat-card"><div class="num">${data.totalScholarships}</div><div class="label">Active Scholarships</div></div>
+        <div class="stat-card"><div class="num">${data.totalApplications}</div><div class="label">Applications</div></div>
+        <div class="stat-card"><div class="num">${statusMap['Pending'] || 0}</div><div class="label">Pending</div></div>
+        <div class="stat-card"><div class="num">${statusMap['Approved'] || 0}</div><div class="label">Approved</div></div>
+        <div class="stat-card"><div class="num">${formatCurrency(data.totalAwarded)}</div><div class="label">Total Awarded</div></div>
+      `;
+    } catch (err) {
+      document.getElementById('statsGrid').innerHTML = '';
+    }
+  }
+
+  // ---------- Scholarships ----------
+  async function loadScholarships() {
+    try {
+      const data = await apiRequest('/scholarships');
+      allScholarships = data.scholarships;
+      renderScholarships();
+    } catch (err) {
+      document.getElementById('scholarshipList').innerHTML =
+        `<div class="empty-state">Couldn't load scholarships: ${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  function renderScholarships() {
+    const container = document.getElementById('scholarshipList');
+    if (allScholarships.length === 0) {
+      container.innerHTML = `<div class="empty-state">No scholarships yet — create one to get started.</div>`;
+      return;
+    }
+    container.innerHTML = allScholarships.map(s => `
+      <div class="complaint-row" style="cursor:default;">
+        <div class="complaint-main" style="cursor:pointer;" onclick="openEditScholarshipForm('${s._id}')">
+          <div class="title">${escapeHtml(s.title)} ${!s.isActive ? '<span class="badge badge-rejected">Inactive</span>' : ''}</div>
+          <div class="criteria-list">
+            <span>${escapeHtml(s.category)}</span>
+            <span>Min score: ${s.minAcademicScore}%</span>
+            <span>Max income: ${formatCurrency(s.maxFamilyIncome)}</span>
+            <span class="deadline-tag">Deadline: ${formatDate(s.deadline)}</span>
+          </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:12px;">
+          <div class="scholarship-amount">${formatCurrency(s.amount)}</div>
+          <button class="btn btn-secondary btn-sm" onclick="toggleActive('${s._id}', ${s.isActive})">${s.isActive ? 'Deactivate' : 'Activate'}</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteScholarship('${s._id}')">Delete</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function openNewScholarshipForm() {
+    document.getElementById('scholarshipFormTitle').textContent = 'New scholarship';
+    document.getElementById('scholarshipForm').reset();
+    document.getElementById('scholarshipId').value = '';
+    document.getElementById('scholarshipOverlay').classList.add('show');
+  }
+
+  function openEditScholarshipForm(id) {
+    const s = allScholarships.find(x => x._id === id);
+    if (!s) return;
+    document.getElementById('scholarshipFormTitle').textContent = 'Edit scholarship';
+    document.getElementById('scholarshipId').value = s._id;
+    document.getElementById('title').value = s.title;
+    document.getElementById('description').value = s.description;
+    document.getElementById('category').value = s.category;
+    document.getElementById('amount').value = s.amount;
+    document.getElementById('minAcademicScore').value = s.minAcademicScore;
+    document.getElementById('maxFamilyIncome').value = s.maxFamilyIncome;
+    document.getElementById('deadline').value = new Date(s.deadline).toISOString().slice(0, 10);
+    document.getElementById('scholarshipOverlay').classList.add('show');
+  }
+
+  function closeScholarshipForm() {
+    document.getElementById('scholarshipOverlay').classList.remove('show');
+  }
+
+  document.getElementById('scholarshipForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errorEl = document.getElementById('scholarshipError');
+    errorEl.classList.remove('show');
+    const btn = document.getElementById('scholarshipSubmitBtn');
+    btn.disabled = true;
+
+    try {
+      const id = document.getElementById('scholarshipId').value;
+      const body = {
+        title: document.getElementById('title').value.trim(),
+        description: document.getElementById('description').value.trim(),
+        category: document.getElementById('category').value,
+        amount: parseFloat(document.getElementById('amount').value),
+        minAcademicScore: parseFloat(document.getElementById('minAcademicScore').value),
+        maxFamilyIncome: parseFloat(document.getElementById('maxFamilyIncome').value),
+        deadline: document.getElementById('deadline').value,
+      };
+
+      if (id) {
+        await apiRequest(`/scholarships/${id}`, { method: 'PATCH', body });
+      } else {
+        await apiRequest('/scholarships', { method: 'POST', body });
+      }
+      closeScholarshipForm();
+      loadScholarships();
+      loadStats();
+    } catch (err) {
+      errorEl.textContent = err.message;
+      errorEl.classList.add('show');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  async function toggleActive(id, currentlyActive) {
+    try {
+      await apiRequest(`/scholarships/${id}`, { method: 'PATCH', body: { isActive: !currentlyActive } });
+      loadScholarships();
+      loadStats();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async function deleteScholarship(id) {
+    if (!confirm('Delete this scholarship? This cannot be undone.')) return;
+    try {
+      await apiRequest(`/scholarships/${id}`, { method: 'DELETE' });
+      loadScholarships();
+      loadStats();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  // ---------- Applications ----------
+  async function loadApplications() {
+    try {
+      const data = await apiRequest('/applications');
+      allApplications = data.applications;
+      renderApplications();
+    } catch (err) {
+      document.getElementById('applicationList').innerHTML =
+        `<div class="empty-state">Couldn't load applications: ${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  function renderApplications() {
+    const status = document.getElementById('statusFilter').value;
+    const list = status ? allApplications.filter(a => a.status === status) : allApplications;
+    const container = document.getElementById('applicationList');
+
+    if (list.length === 0) {
+      container.innerHTML = `<div class="empty-state">No applications match this filter.</div>`;
+      return;
+    }
+
+    container.innerHTML = list.map(a => `
+      <div class="complaint-row" onclick="openReviewModal('${a._id}')">
+        <div class="complaint-main">
+          <div class="title">${escapeHtml(a.student?.name || 'Unknown')} → ${escapeHtml(a.scholarship?.title || 'Scholarship')}</div>
+          <div class="meta">Score: ${a.academicScore}% · Income: ${formatCurrency(a.familyIncome)} · Applied ${formatDate(a.createdAt)}</div>
+        </div>
+        <span class="badge ${statusBadgeClass(a.status)}">${a.status}</span>
+      </div>
+    `).join('');
+  }
+
+  document.getElementById('statusFilter').addEventListener('change', renderApplications);
+
+  async function openReviewModal(id) {
+    try {
+      const data = await apiRequest(`/applications/${id}`);
+      const a = data.application;
+      const eligible = a.academicScore >= a.scholarship.minAcademicScore && a.familyIncome <= a.scholarship.maxFamilyIncome;
+
+      document.getElementById('reviewContent').innerHTML = `
+        <h2 style="margin-top:0;">${escapeHtml(a.student.name)}</h2>
+        <p style="color:var(--ink-soft); font-size:13px;">${escapeHtml(a.student.email)}</p>
+        <p style="margin: 12px 0;"><strong>${escapeHtml(a.scholarship.title)}</strong> · ${formatCurrency(a.scholarship.amount)}</p>
+        <div class="criteria-list" style="margin-bottom:14px;">
+          <span>Academic score: ${a.academicScore}% (min ${a.scholarship.minAcademicScore}%)</span>
+          <span>Family income: ${formatCurrency(a.familyIncome)} (max ${formatCurrency(a.scholarship.maxFamilyIncome)})</span>
+        </div>
+        <p style="margin-bottom:14px;">
+          <span class="badge ${eligible ? 'badge-resolved' : 'badge-rejected'}">${eligible ? 'Meets eligibility criteria' : 'Does not meet criteria'}</span>
+        </p>
+        ${a.documents.length ? `<p style="font-size:13px; margin-bottom:14px;"><strong>Documents:</strong><br>${a.documents.map(escapeHtml).join('<br>')}</p>` : ''}
+
+        <form id="reviewForm" style="background:var(--paper); padding:14px; border-radius:6px;">
+          <div class="field">
+            <label for="reviewStatus">Status</label>
+            <select id="reviewStatus">
+              <option ${a.status === 'Pending' ? 'selected' : ''}>Pending</option>
+              <option ${a.status === 'Under Review' ? 'selected' : ''}>Under Review</option>
+              <option ${a.status === 'Approved' ? 'selected' : ''}>Approved</option>
+              <option ${a.status === 'Rejected' ? 'selected' : ''}>Rejected</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="reviewScore">Review score (0-100)</label>
+            <input type="number" id="reviewScore" min="0" max="100" value="${a.reviewScore != null ? a.reviewScore : ''}">
+          </div>
+          <div class="field">
+            <label for="reviewNotes">Reviewer notes</label>
+            <textarea id="reviewNotes" rows="2">${escapeHtml(a.reviewNotes || '')}</textarea>
+          </div>
+          <button type="submit" class="btn btn-primary" style="width:auto; padding:8px 16px;">Save Review</button>
+        </form>
+      `;
+
+      document.getElementById('reviewForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        try {
+          const scoreVal = document.getElementById('reviewScore').value;
+          await apiRequest(`/applications/${id}/review`, {
+            method: 'PATCH',
+            body: {
+              status: document.getElementById('reviewStatus').value,
+              reviewScore: scoreVal === '' ? undefined : parseFloat(scoreVal),
+              reviewNotes: document.getElementById('reviewNotes').value.trim(),
+            },
+          });
+          closeReviewModal();
+          loadApplications();
+          loadStats();
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
+      document.getElementById('reviewOverlay').classList.add('show');
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  function closeReviewModal() {
+    document.getElementById('reviewOverlay').classList.remove('show');
+  }
+
+  // ---------- Tabs ----------
+  document.getElementById('tabScholarships').addEventListener('click', () => {
+    document.getElementById('scholarshipsTab').classList.remove('hidden');
+    document.getElementById('applicationsTab').classList.add('hidden');
+  });
+  document.getElementById('tabApplications').addEventListener('click', () => {
+    document.getElementById('applicationsTab').classList.remove('hidden');
+    document.getElementById('scholarshipsTab').classList.add('hidden');
+    if (allApplications.length === 0) loadApplications();
+  });
+
+  loadStats();
+  loadScholarships();
+  loadApplications();
+</script>
+</body>
+</html>

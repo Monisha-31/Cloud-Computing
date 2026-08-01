@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scholarships · Scholarship Management System</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%276%27 fill=%27%23223247%27/%3E%3Ccircle cx=%2716%27 cy=%2716%27 r=%275%27 fill=%27%23c1893f%27/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="app-header">
+  <div class="brand">Scholarship Management <span class="role-pill">Student</span></div>
+  <div class="user-info">
+    <span id="userName"></span>
+    <button class="btn btn-secondary btn-sm" onclick="logout()">Log Out</button>
+  </div>
+</header>
+
+<main class="app-main">
+  <h1 class="page-title">Available Scholarships</h1>
+  <p class="page-subtitle">Browse open scholarships and check your eligibility before applying.</p>
+
+  <div style="display:flex; gap:8px; margin-bottom:16px;">
+    <button class="btn btn-secondary" id="tabBrowse">Browse Scholarships</button>
+    <button class="btn btn-secondary" id="tabMyApps">My Applications</button>
+  </div>
+
+  <!-- Browse tab -->
+  <div id="browseTab" class="panel">
+    <div class="panel-header">
+      <h2>Open scholarships</h2>
+      <div class="toolbar">
+        <select id="categoryFilter">
+          <option value="">All categories</option>
+          <option>Merit</option>
+          <option>Need-Based</option>
+          <option>Sports</option>
+          <option>Minority</option>
+          <option>Research</option>
+          <option>General</option>
+        </select>
+      </div>
+    </div>
+    <div id="scholarshipList"></div>
+  </div>
+
+  <!-- My applications tab -->
+  <div id="myAppsTab" class="panel hidden">
+    <div class="panel-header">
+      <h2>My applications</h2>
+      <div class="toolbar">
+        <select id="statusFilter">
+          <option value="">All statuses</option>
+          <option>Pending</option>
+          <option>Under Review</option>
+          <option>Approved</option>
+          <option>Rejected</option>
+        </select>
+      </div>
+    </div>
+    <div id="applicationList"></div>
+  </div>
+</main>
+
+<!-- Apply modal -->
+<div class="modal-overlay" id="applyOverlay">
+  <div class="modal">
+    <button class="modal-close" onclick="closeApplyModal()">&times;</button>
+    <div id="applyContent"></div>
+  </div>
+</div>
+
+<!-- Application detail modal -->
+<div class="modal-overlay" id="detailOverlay">
+  <div class="modal">
+    <button class="modal-close" onclick="closeDetailModal()">&times;</button>
+    <div id="detailContent"></div>
+  </div>
+</div>
+
+<script src="js/api.js"></script>
+<script>
+  const user = requireRole('student');
+  document.getElementById('userName').textContent = user ? user.name : '';
+
+  let allScholarships = [];
+  let allApplications = [];
+  let appliedScholarshipIds = new Set();
+
+  async function loadScholarships() {
+    try {
+      const data = await apiRequest('/scholarships');
+      allScholarships = data.scholarships;
+      renderScholarships();
+    } catch (err) {
+      document.getElementById('scholarshipList').innerHTML =
+        `<div class="empty-state">Couldn't load scholarships: ${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  async function loadApplications() {
+    try {
+      const data = await apiRequest('/applications');
+      allApplications = data.applications;
+      appliedScholarshipIds = new Set(allApplications.map(a => a.scholarship?._id));
+      renderApplications();
+    } catch (err) {
+      document.getElementById('applicationList').innerHTML =
+        `<div class="empty-state">Couldn't load applications: ${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  function renderScholarships() {
+    const category = document.getElementById('categoryFilter').value;
+    const list = category ? allScholarships.filter(s => s.category === category) : allScholarships;
+    const container = document.getElementById('scholarshipList');
+
+    if (list.length === 0) {
+      container.innerHTML = `<div class="empty-state">No open scholarships ${category ? 'in this category' : 'right now'}.</div>`;
+      return;
+    }
+
+    container.innerHTML = list.map(s => {
+      const already = appliedScholarshipIds.has(s._id);
+      const daysLeft = daysUntil(s.deadline);
+      return `
+        <div class="complaint-row" onclick="${already ? '' : `openApplyModal('${s._id}')`}" style="${already ? 'cursor:default;' : ''}">
+          <div class="complaint-main">
+            <div class="title">${escapeHtml(s.title)}</div>
+            <div class="criteria-list">
+              <span>Min score: ${s.minAcademicScore}%</span>
+              <span>Max income: ${formatCurrency(s.maxFamilyIncome)}</span>
+              <span class="deadline-tag">${daysLeft >= 0 ? `${daysLeft} day(s) left` : 'Deadline passed'}</span>
+            </div>
+          </div>
+          <div style="text-align:right;">
+            <div class="scholarship-amount">${formatCurrency(s.amount)}</div>
+            ${already ? '<span class="badge badge-progress">Already Applied</span>' : '<span class="link-btn">Apply →</span>'}
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function renderApplications() {
+    const status = document.getElementById('statusFilter').value;
+    const list = status ? allApplications.filter(a => a.status === status) : allApplications;
+    const container = document.getElementById('applicationList');
+
+    if (list.length === 0) {
+      container.innerHTML = `<div class="empty-state">No applications ${status ? 'with this status' : 'yet'} — browse scholarships to apply.</div>`;
+      return;
+    }
+
+    container.innerHTML = list.map(a => `
+      <div class="complaint-row" onclick="openDetailModal('${a._id}')">
+        <div class="complaint-main">
+          <div class="title">${escapeHtml(a.scholarship?.title || 'Scholarship')}</div>
+          <div class="meta">Applied ${formatDate(a.createdAt)} · Your score: ${a.academicScore}%</div>
+        </div>
+        <span class="badge ${statusBadgeClass(a.status)}">${a.status}</span>
+      </div>
+    `).join('');
+  }
+
+  document.getElementById('categoryFilter').addEventListener('change', renderScholarships);
+  document.getElementById('statusFilter').addEventListener('change', renderApplications);
+
+  function openApplyModal(scholarshipId) {
+    const s = allScholarships.find(x => x._id === scholarshipId);
+    if (!s) return;
+
+    document.getElementById('applyContent').innerHTML = `
+      <h2 style="margin-top:0;">${escapeHtml(s.title)}</h2>
+      <p style="color:var(--ink-soft); line-height:1.5;">${escapeHtml(s.description)}</p>
+      <div class="criteria-list" style="margin-bottom:18px;">
+        <span>Amount: <strong>${formatCurrency(s.amount)}</strong></span>
+        <span>Min score: ${s.minAcademicScore}%</span>
+        <span>Max income: ${formatCurrency(s.maxFamilyIncome)}</span>
+        <span class="deadline-tag">Deadline: ${formatDate(s.deadline)}</span>
+      </div>
+
+      <div class="error-msg" id="applyError"></div>
+      <form id="applyForm">
+        <div class="field">
+          <label for="academicScore">Your academic score (%)</label>
+          <input type="number" id="academicScore" min="0" max="100" step="0.1" required>
+        </div>
+        <div class="field">
+          <label for="familyIncome">Annual family income</label>
+          <input type="number" id="familyIncome" min="0" required>
+        </div>
+        <div class="field">
+          <label for="documents">Supporting documents (one per line)</label>
+          <textarea id="documents" rows="3" placeholder="e.g. Marksheet - submitted&#10;Income certificate - submitted"></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary" id="applySubmitBtn">Submit Application</button>
+      </form>
+    `;
+
+    document.getElementById('applyForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errorEl = document.getElementById('applyError');
+      errorEl.classList.remove('show');
+      const btn = document.getElementById('applySubmitBtn');
+      btn.disabled = true;
+      btn.textContent = 'Submitting...';
+
+      try {
+        const documents = document.getElementById('documents').value
+          .split('\n').map(d => d.trim()).filter(Boolean);
+
+        await apiRequest('/applications', {
+          method: 'POST',
+          body: {
+            scholarshipId: s._id,
+            academicScore: parseFloat(document.getElementById('academicScore').value),
+            familyIncome: parseFloat(document.getElementById('familyIncome').value),
+            documents,
+          },
+        });
+        closeApplyModal();
+        await loadApplications();
+        renderScholarships();
+      } catch (err) {
+        errorEl.textContent = err.message;
+        errorEl.classList.add('show');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Submit Application';
+      }
+    });
+
+    document.getElementById('applyOverlay').classList.add('show');
+  }
+
+  function closeApplyModal() {
+    document.getElementById('applyOverlay').classList.remove('show');
+  }
+
+  async function openDetailModal(id) {
+    try {
+      const data = await apiRequest(`/applications/${id}`);
+      const a = data.application;
+      document.getElementById('detailContent').innerHTML = `
+        <h2 style="margin-top:0;">${escapeHtml(a.scholarship.title)}</h2>
+        <p style="margin-bottom:16px;"><span class="badge ${statusBadgeClass(a.status)}">${a.status}</span></p>
+        <div class="criteria-list" style="margin-bottom:16px;">
+          <span>Amount: ${formatCurrency(a.scholarship.amount)}</span>
+          <span>Applied: ${formatDate(a.createdAt)}</span>
+        </div>
+        <p style="font-size:13px; color:var(--ink-soft);">Your academic score: <strong>${a.academicScore}%</strong> · Family income: <strong>${formatCurrency(a.familyIncome)}</strong></p>
+        ${a.documents.length ? `<p style="font-size:13px; margin-top:10px;"><strong>Documents:</strong><br>${a.documents.map(escapeHtml).join('<br>')}</p>` : ''}
+        ${a.reviewScore != null ? `<p style="margin-top:14px;">Review score: <strong>${a.reviewScore}/100</strong></p>` : ''}
+        ${a.reviewNotes ? `<div class="comment-item" style="margin-top:10px;"><div class="who">Reviewer note</div>${escapeHtml(a.reviewNotes)}</div>` : ''}
+      `;
+      document.getElementById('detailOverlay').classList.add('show');
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  function closeDetailModal() {
+    document.getElementById('detailOverlay').classList.remove('show');
+  }
+
+  document.getElementById('tabBrowse').addEventListener('click', () => {
+    document.getElementById('browseTab').classList.remove('hidden');
+    document.getElementById('myAppsTab').classList.add('hidden');
+  });
+  document.getElementById('tabMyApps').addEventListener('click', () => {
+    document.getElementById('myAppsTab').classList.remove('hidden');
+    document.getElementById('browseTab').classList.add('hidden');
+  });
+
+  (async () => {
+    await loadApplications();
+    await loadScholarships();
+  })();
+</script>
+</body>
+</html>
