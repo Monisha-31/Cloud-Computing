@@ -1,0 +1,19 @@
+# Dependencies
+backend/node_modules/
+
+# Environment variables (contains real secrets — never commit this)
+backend/.env
+
+# Generated data-lake files (raw/compacted/archive) — recreated on first run
+backend/data-lake/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Java build artifacts (if you build the CloudSim simulation inside this repo)
+cloudsim-simulation/*.class
+cloudsim-simulation/bin/

@@ -1,0 +1,122 @@
+[
+  {
+    "timestamp": "2026-08-22T03:01:00Z",
+    "sensorId": "sensor-5",
+    "reading": 32.04,
+    "unit": "celsius"
+  },
+  {
+    "timestamp": "2026-08-20T23:06:00Z",
+    "sensorId": "sensor-9",
+    "reading": 17.82,
+    "unit": "celsius"
+  },
+  {
+    "timestamp": "2026-08-21T01:01:00Z",
+    "sensorId": "sensor-2",
+    "reading": 29.68,
+    "unit": "celsius"
+  },
+  {
+    "timestamp": "2026-08-22T19:01:00Z",
+    "sensorId": "sensor-9",
+    "reading": 27.9,
+    "unit": "celsius"
+  },
+  {
+    "timestamp": "2026-08-22T22:34:00Z",
+    "sensorId": "sensor-7",
+    "reading": 29.84,
+    "unit": "celsius"
+  },
+  {
+    "timestamp": "2026-08-22T08:51:00Z",
+    "sensorId": "sensor-1",
+    "reading": 78.29,
+    "unit": "celsius"
+  },
+  {
+    "timestamp": "2026-08-20T22:27:00Z",
+    "sensorId": "sensor-6",
+    "reading": 35.01,
+    "unit": "celsius"
+  },
+  {
+    "timestamp": "2026-08-20T10:06:00Z",
+    "sensorId": "sensor-2",
+    "reading": 44.19,
+    "unit": "celsius"
+  },
+  {
+    "timestamp": "2026-08-21T11:38:00Z",
+    "sensorId": "sensor-5",
+    "reading": 82.64,
+    "unit": "celsius"
+  },
+  {
+    "timestamp": "2026-08-22T14:34:00Z",
+    "sensorId": "sensor-2",
+    "reading": 97.58,
+    "unit": "celsius"
+  },
+  {
+    "timestamp": "2026-08-21T02:35:00Z",
+    "sensorId": "sensor-5",
+    "reading": 84.65,
+    "unit": "celsius"
+  },
+  {
+    "timestamp": "2026-08-22T11:36:00Z",
+    "sensorId": "sensor-4",
+    "reading": 73.41,
+    "unit": "celsius"
+  },
+  {
+    "timestamp": "2026-08-20T21:14:00Z",
+    "sensorId": "sensor-5",
+    "reading": 98.67,
+    "unit": "celsius"
+  },
+  {
+    "timestamp": "2026-08-20T03:24:00Z",
+    "sensorId": "sensor-5",
+    "reading": 50.81,
+    "unit": "celsius"
+  },
+  {
+    "timestamp": "2026-08-21T05:23:00Z",
+    "sensorId": "sensor-6",
+    "reading": 28.86,
+    "unit": "celsius"
+  },
+  {
+    "timestamp": "2026-08-21T22:59:00Z",
+    "sensorId": "sensor-2",
+    "reading": 64.82,
+    "unit": "celsius"
+  },
+  {
+    "timestamp": "2026-08-20T17:46:00Z",
+    "sensorId": "sensor-4",
+    "reading": 24.71,
+    "unit": "celsius"
+  },
+  {
+    "timestamp": "2026-08-21T08:59:00Z",
+    "sensorId": "sensor-9",
+    "reading": 29.77,
+    "unit": "celsius"
+  },
+  {
+    "timestamp": "2026-08-21T01:14:00Z",
+    "sensorId": "sensor-1",
+    "reading": 82.45,
+    "unit": "celsius"
+  },
+  {
+    "timestamp": "2026-08-21T08:04:00Z",
+    "sensorId": "sensor-4",
+    "reading": 92.18,
+    "unit": "celsius"
+  }
+]

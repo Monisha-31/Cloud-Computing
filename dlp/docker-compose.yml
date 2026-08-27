@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: dlp-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dlp-app
+    restart: unless-stopped
+    depends_on:
+      - mongo
+    ports:
+      - "5000:5000"
+    environment:
+      PORT: 5000
+      MONGO_URI: mongodb://mongo:27017/data_lake_pipeline
+      JWT_SECRET: ${JWT_SECRET:-changeThisSecretInProduction}
+      JWT_EXPIRES_IN: 7d
+      COMPACTION_THRESHOLD: 3
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_REGION: ${AWS_REGION:-ap-south-1}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET:-}
+    volumes:
+      # Keep the generated data-lake files even if the container is recreated
+      - dlp-data-lake:/app/backend/data-lake
+
+volumes:
+  mongo-data:
+  dlp-data-lake:

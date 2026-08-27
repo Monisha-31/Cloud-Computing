@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pipeline Dashboard · Data Lake Pipeline</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%276%27 fill=%27%23223247%27/%3E%3Ccircle cx=%2716%27 cy=%2716%27 r=%275%27 fill=%27%23c1893f%27/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="app-header">
+  <div class="brand">Data Lake Pipeline <span class="role-pill">Operator</span></div>
+  <div class="user-info">
+    <span id="userName"></span>
+    <button class="btn btn-secondary btn-sm" onclick="logout()">Log Out</button>
+  </div>
+</header>
+
+<main class="app-main">
+  <h1 class="page-title">Pipeline Dashboard</h1>
+  <p class="page-subtitle">Ingest raw data, watch it get partitioned by date, then compact small files on demand.</p>
+
+  <div class="stats-grid" id="statsGrid"></div>
+
+  <div style="display:flex; gap:8px; margin-bottom:16px; flex-wrap: wrap;">
+    <button class="btn btn-secondary" id="tabIngest">Ingest Data</button>
+    <button class="btn btn-secondary" id="tabPartitions">Partitions</button>
+    <button class="btn btn-secondary" id="tabHistory">Run History</button>
+  </div>
+
+  <!-- Ingest tab -->
+  <div id="ingestTab" class="panel">
+    <div class="panel-header"><h2>Upload raw data</h2></div>
+    <div style="padding: 22px;">
+      <p style="font-size:13px; color:var(--ink-soft); margin-top:0;">
+        Upload a <strong>.json</strong> (array of objects) or <strong>.csv</strong> file where every record has a
+        <code>timestamp</code> field. The pipeline reads it, splits records by calendar date, and writes one raw
+        partition file per date — simulating how a real ingestion job would land data in a lake.
+      </p>
+      <label class="dropzone" id="dropzone">
+        <input type="file" id="fileInput" accept=".json,.csv">
+        <div id="dropzoneText">Click to choose a file, or drag one here</div>
+      </label>
+      <div class="error-msg" id="uploadError"></div>
+      <div id="uploadResult"></div>
+    </div>
+
+    <div class="panel-header" style="border-top: 1px solid var(--line);"><h2>Upload history</h2></div>
+    <div id="uploadHistory"></div>
+  </div>
+
+  <!-- Partitions tab -->
+  <div id="partitionsTab" class="panel hidden">
+    <div class="panel-header">
+      <h2>Partitions <span style="font-weight:400; color:var(--ink-soft); font-size:12px;">(compaction threshold: <span id="thresholdLabel">-</span> files)</span></h2>
+      <button class="btn btn-primary" style="width:auto; padding:8px 16px;" id="runPipelineBtn">Run Compaction Pipeline</button>
+    </div>
+    <div id="partitionList"></div>
+  </div>
+
+  <!-- History tab -->
+  <div id="historyTab" class="panel hidden">
+    <div class="panel-header"><h2>Pipeline run history</h2></div>
+    <div id="runHistory"></div>
+  </div>
+</main>
+
+<!-- Partition files modal -->
+<div class="modal-overlay" id="filesOverlay">
+  <div class="modal">
+    <button class="modal-close" onclick="closeFilesModal()">&times;</button>
+    <div id="filesContent"></div>
+  </div>
+</div>
+
+<!-- Run result modal -->
+<div class="modal-overlay" id="runOverlay">
+  <div class="modal">
+    <button class="modal-close" onclick="closeRunModal()">&times;</button>
+    <div id="runContent"></div>
+  </div>
+</div>
+
+<script src="js/api.js"></script>
+<script>
+  const user = requireAuth();
+  document.getElementById('userName').textContent = user ? user.name : '';
+
+  let s3Configured = false;
+
+  async function loadStats() {
+    try {
+      const [partitionData, runData] = await Promise.all([
+        apiRequest('/partitions'),
+        apiRequest('/pipeline/runs'),
+      ]);
+      const partitions = partitionData.partitions;
+      const totalRaw = partitions.reduce((sum, p) => sum + p.rawFileCount, 0);
+      const totalCompacted = partitions.reduce((sum, p) => sum + p.compactedFileCount, 0);
+      const totalSize = partitions.reduce((sum, p) => sum + p.rawSizeBytes + p.compactedSizeBytes, 0);
+
+      document.getElementById('statsGrid').innerHTML = `
+        <div class="stat-card"><div class="num">${partitions.length}</div><div class="label">Partitions</div></div>
+        <div class="stat-card"><div class="num">${totalRaw}</div><div class="label">Raw Files</div></div>
+        <div class="stat-card"><div class="num">${totalCompacted}</div><div class="label">Compacted Files</div></div>
+        <div class="stat-card"><div class="num">${formatBytes(totalSize)}</div><div class="label">Total Size</div></div>
+        <div class="stat-card"><div class="num">${runData.runs.length}</div><div class="label">Pipeline Runs</div></div>
+      `;
+    } catch (err) {
+      document.getElementById('statsGrid').innerHTML = '';
+    }
+  }
+
+  async function checkS3Status() {
+    try {
+      const data = await apiRequest('/s3/status');
+      s3Configured = data.configured;
+    } catch (err) { s3Configured = false; }
+  }
+
+  // ---------- Ingest ----------
+  const dropzone = document.getElementById('dropzone');
+  const fileInput = document.getElementById('fileInput');
+
+  dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
+  dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+  dropzone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropzone.classList.remove('dragover');
+    if (e.dataTransfer.files.length) {
+      fileInput.files = e.dataTransfer.files;
+      handleUpload(e.dataTransfer.files[0]);
+    }
+  });
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files.length) handleUpload(fileInput.files[0]);
+  });
+
+  async function handleUpload(file) {
+    const errorEl = document.getElementById('uploadError');
+    const resultEl = document.getElementById('uploadResult');
+    errorEl.classList.remove('show');
+    resultEl.innerHTML = '';
+    document.getElementById('dropzoneText').textContent = `Uploading ${file.name}...`;
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const data = await apiRequest('/uploads', { method: 'POST', body: formData, isFormData: true });
+
+      resultEl.innerHTML = `
+        <div class="empty-state" style="padding:16px; text-align:left; font-family:var(--font-mono);">
+          ${escapeHtml(data.message)}<br>
+          Partitions touched: ${data.partitionsTouched.join(', ')}
+        </div>
+      `;
+      loadUploadHistory();
+      loadStats();
+    } catch (err) {
+      errorEl.textContent = err.message;
+      errorEl.classList.add('show');
+    } finally {
+      document.getElementById('dropzoneText').textContent = 'Click to choose a file, or drag one here';
+      fileInput.value = '';
+    }
+  }
+
+  async function loadUploadHistory() {
+    try {
+      const data = await apiRequest('/uploads');
+      const container = document.getElementById('uploadHistory');
+      if (data.uploads.length === 0) {
+        container.innerHTML = `<div class="empty-state">No uploads yet.</div>`;
+        return;
+      }
+      container.innerHTML = data.uploads.map(u => `
+        <div class="complaint-row" style="cursor:default;">
+          <div class="complaint-main">
+            <div class="title">${escapeHtml(u.originalName)}</div>
+            <div class="meta">${u.recordCount} records · ${formatBytes(u.sizeBytes)} · ${u.partitionsTouched.length} partition(s) touched · ${formatDate(u.createdAt)}</div>
+          </div>
+        </div>
+      `).join('');
+    } catch (err) {
+      document.getElementById('uploadHistory').innerHTML = `<div class="empty-state">Couldn't load upload history.</div>`;
+    }
+  }
+
+  // ---------- Partitions ----------
+  async function loadPartitions() {
+    try {
+      const data = await apiRequest('/partitions');
+      document.getElementById('thresholdLabel').textContent = data.threshold;
+      const container = document.getElementById('partitionList');
+
+      if (data.partitions.length === 0) {
+        container.innerHTML = `<div class="empty-state">No data ingested yet — upload a file from the Ingest tab.</div>`;
+        return;
+      }
+
+      container.innerHTML = data.partitions.map(p => `
+        <div class="complaint-row" onclick="openPartitionFiles('${p.partitionKey}')">
+          <div class="complaint-main">
+            <div class="title">${p.partitionKey} ${p.needsCompaction ? '<span class="badge badge-open">Needs Compaction</span>' : ''}</div>
+            <div class="meta">Raw: ${p.rawFileCount} file(s), ${formatBytes(p.rawSizeBytes)} · Compacted: ${p.compactedFileCount} file(s), ${formatBytes(p.compactedSizeBytes)}</div>
+          </div>
+        </div>
+      `).join('');
+    } catch (err) {
+      document.getElementById('partitionList').innerHTML = `<div class="empty-state">Couldn't load partitions.</div>`;
+    }
+  }
+
+  async function openPartitionFiles(partitionKey) {
+    try {
+      const encodedKey = partitionKey.replace(/\//g, '--');
+      const data = await apiRequest(`/partitions/${encodedKey}/files`);
+      await checkS3Status();
+
+      document.getElementById('filesContent').innerHTML = `
+        <h2 style="margin-top:0;">Partition ${data.partitionKey}</h2>
+        ${data.files.map(f => `
+          <div class="complaint-row" style="cursor:default;">
+            <div class="complaint-main">
+              <div class="title">${escapeHtml(f.fileName)} <span class="badge ${f.status === 'raw' ? 'badge-open' : f.status === 'compacted' ? 'badge-resolved' : 'badge-rejected'}">${f.status}</span></div>
+              <div class="meta">${f.recordCount} records · ${formatBytes(f.sizeBytes)} ${f.s3Key ? '· Pushed to S3' : ''}</div>
+            </div>
+            ${f.status === 'compacted' && !f.s3Key && s3Configured ? `<button class="btn btn-secondary btn-sm" onclick="pushToS3('${f._id}')">Push to S3</button>` : ''}
+          </div>
+        `).join('')}
+        ${!s3Configured ? '<p style="font-size:12px; color:var(--ink-soft); margin-top:12px;">AWS isn\'t configured — add AWS credentials to .env to enable pushing compacted files to S3.</p>' : ''}
+      `;
+      document.getElementById('filesOverlay').classList.add('show');
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async function pushToS3(fileId) {
+    try {
+      const data = await apiRequest(`/s3/upload/${fileId}`, { method: 'POST' });
+      alert(`Uploaded to S3 at key: ${data.s3Key}`);
+      closeFilesModal();
+      loadPartitions();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  function closeFilesModal() { document.getElementById('filesOverlay').classList.remove('show'); }
+
+  document.getElementById('runPipelineBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('runPipelineBtn');
+    btn.disabled = true;
+    btn.textContent = 'Running...';
+    try {
+      const data = await apiRequest('/pipeline/run', { method: 'POST' });
+      const run = data.run;
+      document.getElementById('runContent').innerHTML = `
+        <h2 style="margin-top:0;">Pipeline Run Complete</h2>
+        <div class="metric-flow" style="margin-bottom:16px;">
+          <span class="before">${run.filesBefore} files (${formatBytes(run.sizeBeforeBytes)})</span>
+          <span class="arrow">→</span>
+          <span class="after">${run.filesAfter} files (${formatBytes(run.sizeAfterBytes)})</span>
+        </div>
+        <p style="font-size:13px; color:var(--ink-soft);">Partitions affected: ${run.partitionsAffected}</p>
+        <h3 style="font-size:14px;">Log</h3>
+        ${run.logs.map(l => `<div class="log-line">${escapeHtml(l)}</div>`).join('')}
+      `;
+      document.getElementById('runOverlay').classList.add('show');
+      loadPartitions();
+      loadStats();
+      loadRunHistory();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Run Compaction Pipeline';
+    }
+  });
+
+  function closeRunModal() { document.getElementById('runOverlay').classList.remove('show'); }
+
+  // ---------- History ----------
+  async function loadRunHistory() {
+    try {
+      const data = await apiRequest('/pipeline/runs');
+      const container = document.getElementById('runHistory');
+      if (data.runs.length === 0) {
+        container.innerHTML = `<div class="empty-state">No pipeline runs yet.</div>`;
+        return;
+      }
+      container.innerHTML = data.runs.map(r => `
+        <div class="complaint-row" style="cursor:default;">
+          <div class="complaint-main">
+            <div class="title">${formatDate(r.createdAt)} <span class="badge ${r.status === 'completed' ? 'badge-resolved' : 'badge-rejected'}">${r.status}</span></div>
+            <div class="metric-flow">
+              <span class="before">${r.filesBefore} files (${formatBytes(r.sizeBeforeBytes)})</span>
+              <span class="arrow">→</span>
+              <span class="after">${r.filesAfter} files (${formatBytes(r.sizeAfterBytes)})</span>
+              <span style="color:var(--ink-soft);">· ${r.partitionsAffected} partition(s)</span>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    } catch (err) {
+      document.getElementById('runHistory').innerHTML = `<div class="empty-state">Couldn't load run history.</div>`;
+    }
+  }
+
+  // ---------- Tabs ----------
+  const tabs = {
+    tabIngest: 'ingestTab',
+    tabPartitions: 'partitionsTab',
+    tabHistory: 'historyTab',
+  };
+  Object.entries(tabs).forEach(([btnId, panelId]) => {
+    document.getElementById(btnId).addEventListener('click', () => {
+      Object.values(tabs).forEach(p => document.getElementById(p).classList.add('hidden'));
+      document.getElementById(panelId).classList.remove('hidden');
+    });
+  });
+
+  loadStats();
+  loadUploadHistory();
+  loadPartitions();
+  loadRunHistory();
+</script>
+</body>
+</html>
