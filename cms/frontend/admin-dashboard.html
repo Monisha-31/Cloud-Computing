@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin Dashboard · Complaint Management System</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%276%27 fill=%27%23223247%27/%3E%3Ccircle cx=%2716%27 cy=%2716%27 r=%275%27 fill=%27%23c1893f%27/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="app-header">
+  <div class="brand">Complaint Management <span class="role-pill">Admin</span></div>
+  <div class="user-info">
+    <span id="userName"></span>
+    <button class="btn btn-secondary btn-sm" onclick="logout()">Log Out</button>
+  </div>
+</header>
+
+<main class="app-main">
+  <h1 class="page-title">Admin Dashboard</h1>
+  <p class="page-subtitle">Overview of all complaints and accounts across the system.</p>
+
+  <div class="stats-grid" id="statsGrid"></div>
+
+  <div style="display:flex; gap:8px; margin-bottom:16px;">
+    <button class="btn btn-secondary" id="tabComplaints">Complaints</button>
+    <button class="btn btn-secondary" id="tabUsers">Users</button>
+  </div>
+
+  <!-- Complaints tab -->
+  <div id="complaintsTab" class="panel">
+    <div class="panel-header">
+      <h2>All complaints</h2>
+      <div class="toolbar">
+        <select id="statusFilter">
+          <option value="">All statuses</option>
+          <option>Open</option>
+          <option>In Progress</option>
+          <option>Resolved</option>
+          <option>Rejected</option>
+        </select>
+        <select id="categoryFilter">
+          <option value="">All categories</option>
+          <option>Billing</option>
+          <option>Technical</option>
+          <option>Service Quality</option>
+          <option>HR</option>
+          <option>General</option>
+        </select>
+      </div>
+    </div>
+    <div id="complaintList"></div>
+  </div>
+
+  <!-- Users tab -->
+  <div id="usersTab" class="panel hidden">
+    <div class="panel-header">
+      <h2>Accounts</h2>
+      <button class="btn btn-primary" style="width:auto; padding:8px 16px;" onclick="openNewUserForm()">+ New Staff/Admin</button>
+    </div>
+    <div id="userList"></div>
+  </div>
+</main>
+
+<!-- Complaint detail modal -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal()">&times;</button>
+    <div id="modalContent"></div>
+  </div>
+</div>
+
+<!-- New staff/admin modal -->
+<div class="modal-overlay" id="newUserOverlay">
+  <div class="modal">
+    <button class="modal-close" onclick="closeNewUserForm()">&times;</button>
+    <h2 style="margin-top:0;">Create staff or admin account</h2>
+    <div class="error-msg" id="newUserError"></div>
+    <form id="newUserForm">
+      <div class="field">
+        <label for="nuName">Full name</label>
+        <input type="text" id="nuName" required>
+      </div>
+      <div class="field">
+        <label for="nuEmail">Email</label>
+        <input type="email" id="nuEmail" required>
+      </div>
+      <div class="field">
+        <label for="nuPassword">Temporary password</label>
+        <input type="password" id="nuPassword" required minlength="6">
+      </div>
+      <div class="field">
+        <label for="nuRole">Role</label>
+        <select id="nuRole">
+          <option value="staff">Staff</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div>
+      <div class="field" id="nuDeptField">
+        <label for="nuDept">Department (staff only)</label>
+        <select id="nuDept">
+          <option>Billing</option>
+          <option>Technical</option>
+          <option>Service Quality</option>
+          <option>HR</option>
+          <option>General</option>
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:auto; padding:8px 16px;">Create Account</button>
+    </form>
+  </div>
+</div>
+
+<script src="js/api.js"></script>
+<script>
+  const user = requireRole('admin');
+  document.getElementById('userName').textContent = user ? user.name : '';
+
+  let allComplaints = [];
+  let allUsers = [];
+
+  async function loadStats() {
+    try {
+      const data = await apiRequest('/complaints/stats/overview');
+      const statusMap = Object.fromEntries(data.byStatus.map(s => [s._id, s.count]));
+      document.getElementById('statsGrid').innerHTML = `
+        <div class="stat-card"><div class="num">${data.total}</div><div class="label">Total</div></div>
+        <div class="stat-card"><div class="num">${statusMap['Open'] || 0}</div><div class="label">Open</div></div>
+        <div class="stat-card"><div class="num">${statusMap['In Progress'] || 0}</div><div class="label">In Progress</div></div>
+        <div class="stat-card"><div class="num">${statusMap['Resolved'] || 0}</div><div class="label">Resolved</div></div>
+        <div class="stat-card"><div class="num">${statusMap['Rejected'] || 0}</div><div class="label">Rejected</div></div>
+      `;
+    } catch (err) {
+      document.getElementById('statsGrid').innerHTML = '';
+    }
+  }
+
+  async function loadComplaints() {
+    try {
+      const data = await apiRequest('/complaints');
+      allComplaints = data.complaints;
+      renderComplaintList();
+    } catch (err) {
+      document.getElementById('complaintList').innerHTML =
+        `<div class="empty-state">Couldn't load complaints: ${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  function renderComplaintList() {
+    const status = document.getElementById('statusFilter').value;
+    const category = document.getElementById('categoryFilter').value;
+    let list = allComplaints;
+    if (status) list = list.filter(c => c.status === status);
+    if (category) list = list.filter(c => c.category === category);
+
+    const container = document.getElementById('complaintList');
+    if (list.length === 0) {
+      container.innerHTML = `<div class="empty-state">No complaints match these filters.</div>`;
+      return;
+    }
+
+    container.innerHTML = list.map(c => `
+      <div class="complaint-row" onclick="openModal('${c._id}')">
+        <div class="complaint-main">
+          <div class="title">${escapeHtml(c.title)}</div>
+          <div class="meta">${escapeHtml(c.category)} · Filed by ${escapeHtml(c.createdBy?.name || 'Unknown')} · ${formatDate(c.createdAt)}</div>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <span class="badge ${priorityBadgeClass(c.priority)}">${c.priority}</span>
+          <span class="badge ${statusBadgeClass(c.status)}">${c.status}</span>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  document.getElementById('statusFilter').addEventListener('change', renderComplaintList);
+  document.getElementById('categoryFilter').addEventListener('change', renderComplaintList);
+
+  async function openModal(id) {
+    try {
+      const data = await apiRequest(`/complaints/${id}`);
+      const c = data.complaint;
+      const staffOptions = allUsers.filter(u => u.role === 'staff' && u.department === c.category);
+
+      document.getElementById('modalContent').innerHTML = `
+        <h2 style="margin-top:0;">${escapeHtml(c.title)}</h2>
+        <p style="display:flex; gap:8px; margin-bottom:16px;">
+          <span class="badge ${statusBadgeClass(c.status)}">${c.status}</span>
+          <span class="badge ${priorityBadgeClass(c.priority)}">${c.priority} priority</span>
+        </p>
+        <p style="color:var(--slate); font-size:13px;">
+          Filed by ${escapeHtml(c.createdBy?.name || 'Unknown')} · ${escapeHtml(c.category)} · ${formatDate(c.createdAt)}
+        </p>
+        <p style="margin: 16px 0; line-height:1.5;">${escapeHtml(c.description)}</p>
+        <p style="font-size:13px; color:var(--slate);">
+          Assigned to: ${c.assignedTo ? escapeHtml(c.assignedTo.name) : 'Unassigned'}
+        </p>
+
+        <form id="assignForm" style="background:var(--paper); padding:14px; border-radius:6px; margin: 14px 0;">
+          <div class="field">
+            <label for="staffSelect">Assign to staff member</label>
+            <select id="staffSelect">
+              <option value="">Select staff in ${escapeHtml(c.category)}</option>
+              ${staffOptions.map(s => `<option value="${s._id}">${escapeHtml(s.name)}</option>`).join('')}
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary" style="width:auto; padding:8px 16px;">Assign</button>
+        </form>
+
+        <h3 style="font-size:14px;">Comments</h3>
+        <div id="commentsList">
+          ${c.comments.length === 0 ? '<p style="color:var(--slate); font-size:13px;">No comments yet.</p>' :
+            c.comments.map(cm => `
+              <div class="comment-item">
+                <div class="who">${escapeHtml(cm.authorName)}</div>
+                <div>${escapeHtml(cm.message)}</div>
+                <div class="when">${formatDate(cm.createdAt)}</div>
+              </div>
+            `).join('')}
+        </div>
+        <form id="commentForm" style="margin-top:14px; display:flex; gap:8px;">
+          <input type="text" id="commentText" placeholder="Add a comment..." style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:6px;" required>
+          <button type="submit" class="btn btn-primary" style="width:auto; padding:8px 16px;">Post</button>
+        </form>
+      `;
+
+      document.getElementById('assignForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const staffId = document.getElementById('staffSelect').value;
+        if (!staffId) return;
+        try {
+          await apiRequest(`/complaints/${id}/assign`, { method: 'PATCH', body: { staffId } });
+          openModal(id);
+          loadComplaints();
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
+      document.getElementById('commentForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const text = document.getElementById('commentText').value.trim();
+        if (!text) return;
+        await apiRequest(`/complaints/${id}/comments`, { method: 'POST', body: { message: text } });
+        openModal(id);
+      });
+
+      document.getElementById('modalOverlay').classList.add('show');
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  function closeModal() {
+    document.getElementById('modalOverlay').classList.remove('show');
+  }
+
+  // ---------- Users tab ----------
+  async function loadUsers() {
+    try {
+      const data = await apiRequest('/users');
+      allUsers = data.users;
+      renderUserList();
+    } catch (err) {
+      document.getElementById('userList').innerHTML =
+        `<div class="empty-state">Couldn't load users: ${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  function renderUserList() {
+    const container = document.getElementById('userList');
+    if (allUsers.length === 0) {
+      container.innerHTML = `<div class="empty-state">No accounts yet.</div>`;
+      return;
+    }
+    container.innerHTML = allUsers.map(u => `
+      <div class="complaint-row" style="cursor:default;">
+        <div class="complaint-main">
+          <div class="title">${escapeHtml(u.name)} <span style="font-weight:400; color:var(--slate);">(${u.role}${u.department ? ' · ' + escapeHtml(u.department) : ''})</span></div>
+          <div class="meta">${escapeHtml(u.email)}</div>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span class="badge ${u.isActive ? 'badge-resolved' : 'badge-rejected'}">${u.isActive ? 'Active' : 'Disabled'}</span>
+          <button class="btn btn-secondary btn-sm" onclick="toggleUser('${u._id}')">${u.isActive ? 'Disable' : 'Enable'}</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  async function toggleUser(id) {
+    try {
+      await apiRequest(`/users/${id}/status`, { method: 'PATCH' });
+      loadUsers();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  function openNewUserForm() { document.getElementById('newUserOverlay').classList.add('show'); }
+  function closeNewUserForm() { document.getElementById('newUserOverlay').classList.remove('show'); }
+
+  document.getElementById('nuRole').addEventListener('change', (e) => {
+    document.getElementById('nuDeptField').classList.toggle('hidden', e.target.value !== 'staff');
+  });
+
+  document.getElementById('newUserForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errorEl = document.getElementById('newUserError');
+    errorEl.classList.remove('show');
+    try {
+      const body = {
+        name: document.getElementById('nuName').value.trim(),
+        email: document.getElementById('nuEmail').value.trim(),
+        password: document.getElementById('nuPassword').value,
+        role: document.getElementById('nuRole').value,
+        department: document.getElementById('nuDept').value,
+      };
+      await apiRequest('/users', { method: 'POST', body });
+      e.target.reset();
+      closeNewUserForm();
+      loadUsers();
+    } catch (err) {
+      errorEl.textContent = err.message;
+      errorEl.classList.add('show');
+    }
+  });
+
+  // ---------- Tabs ----------
+  document.getElementById('tabComplaints').addEventListener('click', () => {
+    document.getElementById('complaintsTab').classList.remove('hidden');
+    document.getElementById('usersTab').classList.add('hidden');
+  });
+  document.getElementById('tabUsers').addEventListener('click', () => {
+    document.getElementById('usersTab').classList.remove('hidden');
+    document.getElementById('complaintsTab').classList.add('hidden');
+    if (allUsers.length === 0) loadUsers();
+  });
+
+  loadStats();
+  loadComplaints();
+  loadUsers(); // preload so the assign dropdown has staff data ready
+</script>
+</body>
+</html>
