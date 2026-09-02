@@ -1,0 +1,15 @@
+version: "3.8"
+
+services:
+  carpool-app:
+    build: .
+    image: carpool-app:latest
+    container_name: carpool-app
+    ports:
+      - "5000:5000"
+    volumes:
+      - carpool-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  carpool-data:

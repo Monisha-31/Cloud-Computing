@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h2>Edit Ride</h2>
+  <form method="POST">
+    <label>Your Name</label>
+    <input type="text" name="driver_name" value="{{ ride.driver_name }}" required>
+    <label>Source</label>
+    <input type="text" name="source" list="place-list" value="{{ ride.source }}" required>
+    <label>Destination</label>
+    <input type="text" name="destination" list="place-list" value="{{ ride.destination }}" required>
+    <datalist id="place-list">
+      {% for p in places %}
+      <option value="{{ p }}">
+      {% endfor %}
+    </datalist>
+    <label>Travel Time</label>
+    <input type="datetime-local" name="travel_time" value="{{ ride.travel_time }}" required>
+    <label>Seats Available</label>
+    <input type="number" name="seats_available" min="0" max="6" value="{{ ride.seats_available }}" required>
+    <button type="submit">Save Changes</button>
+  </form>
+  <a href="{{ url_for('driver') }}">
+    <button type="button" style="margin-top:0.6rem; background:#888;">Cancel</button>
+  </a>
+</div>
+{% endblock %}

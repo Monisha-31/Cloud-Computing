@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>{% block title %}Carpool Coordination Platform{% endblock %}</title>
+<style>
+  :root {
+    --primary: #2f6f4f;
+    --primary-dark: #234f38;
+    --bg: #f6f8f6;
+    --card: #ffffff;
+    --accent: #ffb347;
+    --text: #22303a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+  }
+  nav {
+    background: var(--primary);
+    padding: 1rem 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  nav a {
+    color: white;
+    text-decoration: none;
+    margin-left: 1.5rem;
+    font-weight: 500;
+  }
+  nav .brand { font-size: 1.3rem; font-weight: 700; margin-left: 0; }
+  .container {
+    max-width: 780px;
+    margin: 2rem auto;
+    padding: 0 1rem;
+  }
+  .card {
+    background: var(--card);
+    border-radius: 10px;
+    padding: 1.5rem 2rem;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+    margin-bottom: 1.5rem;
+  }
+  h1, h2 { color: var(--primary-dark); }
+  label { display: block; margin-top: 0.9rem; font-weight: 600; font-size: 0.9rem; }
+  input, button {
+    width: 100%;
+    padding: 0.6rem;
+    margin-top: 0.3rem;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+    font-size: 1rem;
+  }
+  button {
+    margin-top: 1.2rem;
+    background: var(--primary);
+    color: white;
+    border: none;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  button:hover { background: var(--primary-dark); }
+  table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+  th, td { text-align: left; padding: 0.6rem; border-bottom: 1px solid #eee; }
+  th { color: var(--primary-dark); }
+  .flash { padding: 0.8rem; border-radius: 6px; margin-bottom: 1rem; font-weight: 600; }
+  .flash.success { background: #dff5e3; color: #1f6b3a; }
+  .flash.error { background: #fbe2e2; color: #8b1f1f; }
+  .badge { background: var(--accent); color: #4a3300; padding: 0.15rem 0.6rem; border-radius: 12px; font-size: 0.8rem; font-weight: 700; }
+</style>
+</head>
+<body>
+<nav>
+  <span class="brand">🚗 Carpool Coordination Platform</span>
+  <div>
+    <a href="{{ url_for('home') }}">Home</a>
+    <a href="{{ url_for('driver') }}">I'm a Driver</a>
+    <a href="{{ url_for('rider') }}">I'm a Rider</a>
+  </div>
+</nav>
+<div class="container">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="flash {{ category }}">{{ message }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+  {% block content %}{% endblock %}
+</div>
+</body>
+</html>

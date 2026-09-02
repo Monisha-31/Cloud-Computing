@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h1>Welcome 👋</h1>
+  <p>This platform connects <strong>drivers</strong> and <strong>riders</strong> travelling on similar routes
+  and at similar times — reducing travel cost, traffic, and fuel usage.</p>
+  <p>Choose your role to get started:</p>
+  <div style="display:flex; gap:1rem; margin-top:1rem;">
+    <a href="{{ url_for('driver') }}" style="flex:1;">
+      <button type="button">🚘 I'm a Driver</button>
+    </a>
+    <a href="{{ url_for('rider') }}" style="flex:1;">
+      <button type="button">🙋 I'm a Rider</button>
+    </a>
+  </div>
+</div>
+<div class="card">
+  <h2>How it works</h2>
+  <ol>
+    <li>Drivers post a ride: source, destination, travel time, and seats available.</li>
+    <li>Riders search for a ride on the same route within a nearby time window.</li>
+    <li>The system matches them automatically and the rider books a seat.</li>
+  </ol>
+</div>
+{% endblock %}

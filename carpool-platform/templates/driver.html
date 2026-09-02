@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h2>Post a Ride</h2>
+  <form method="POST">
+    <label>Your Name</label>
+    <input type="text" name="driver_name" required>
+    <label>Source</label>
+    <input type="text" name="source" list="place-list" required placeholder="e.g. Whitefield">
+    <label>Destination</label>
+    <input type="text" name="destination" list="place-list" required placeholder="e.g. MG Road">
+    <datalist id="place-list">
+      {% for p in places %}
+      <option value="{{ p }}">
+      {% endfor %}
+    </datalist>
+    <label>Travel Time</label>
+    <input type="datetime-local" name="travel_time" required>
+    <label>Seats Available</label>
+    <input type="number" name="seats_available" min="1" max="6" value="3" required>
+    <button type="submit">Post Ride</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Currently Posted Rides</h2>
+  {% if rides %}
+  <table>
+    <tr><th>Driver</th><th>Route</th><th>Time</th><th>Seats</th><th>Actions</th></tr>
+    {% for r in rides %}
+    <tr>
+      <td>{{ r.driver_name }}</td>
+      <td>{{ r.source }} → {{ r.destination }}</td>
+      <td>{{ r.travel_time.replace("T", " ") }}</td>
+      <td><span class="badge">{{ r.seats_available }}</span></td>
+      <td>
+        <div style="display:flex; gap:0.5rem;">
+          <a href="{{ url_for('edit_ride', ride_id=r.id) }}">
+            <button type="button" style="margin:0; padding:0.4rem 0.7rem; width:auto; background:#4a7fb5;">Edit</button>
+          </a>
+          <form method="POST" action="{{ url_for('delete_ride', ride_id=r.id) }}" style="margin:0;"
+                onsubmit="return confirm('Delete this ride?');">
+            <button type="submit" style="margin:0; padding:0.4rem 0.7rem; width:auto; background:#c0392b;">Delete</button>
+          </form>
+        </div>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p>No rides posted yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

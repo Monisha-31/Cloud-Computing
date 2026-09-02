@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h2>Find a Ride</h2>
+  <form method="POST">
+    <label>Your Name</label>
+    <input type="text" name="rider_name" required>
+    <label>Source</label>
+    <input type="text" name="source" list="place-list" required placeholder="e.g. Whitefield">
+    <label>Destination</label>
+    <input type="text" name="destination" list="place-list" required placeholder="e.g. MG Road">
+    <datalist id="place-list">
+      {% for p in places %}
+      <option value="{{ p }}">
+      {% endfor %}
+    </datalist>
+    <label>Preferred Travel Time</label>
+    <input type="datetime-local" name="travel_time" required>
+    <button type="submit">Search Matches</button>
+  </form>
+</div>
+
+{% if searched %}
+<div class="card">
+  <h2>Matching Rides</h2>
+  {% if matches %}
+  <table>
+    <tr><th>Driver</th><th>Route</th><th>Time</th><th>Diff (min)</th><th>Seats</th><th></th></tr>
+    {% for m in matches %}
+    <tr>
+      <td>{{ m.driver_name }}</td>
+      <td>{{ m.source }} → {{ m.destination }}</td>
+      <td>{{ m.travel_time.replace("T", " ") }}</td>
+      <td>{{ m.time_diff_minutes }}</td>
+      <td><span class="badge">{{ m.seats_available }}</span></td>
+      <td>
+        <form method="POST" action="{{ url_for('book', ride_id=m.id) }}" style="margin:0;">
+          <button type="submit" style="margin:0; padding:0.4rem 0.8rem; width:auto;">Book</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p>No matching rides found within the time window. Try a different time or route.</p>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Currently Ongoing Rides</h2>
+  <p style="color:#667; margin-top:-0.5rem;">All upcoming rides posted by drivers right now, in case you'd rather browse than search.</p>
+  {% if ongoing_rides %}
+  <table>
+    <tr><th>Driver</th><th>Route</th><th>Time</th><th>Seats</th><th></th></tr>
+    {% for r in ongoing_rides %}
+    <tr>
+      <td>{{ r.driver_name }}</td>
+      <td>{{ r.source }} → {{ r.destination }}</td>
+      <td>{{ r.travel_time.replace("T", " ") }}</td>
+      <td><span class="badge">{{ r.seats_available }}</span></td>
+      <td>
+        <form method="POST" action="{{ url_for('book', ride_id=r.id) }}" style="margin:0;">
+          <button type="submit" style="margin:0; padding:0.4rem 0.8rem; width:auto;">Book</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p>No ongoing rides right now. Check back later or post a search above.</p>
+  {% endif %}
+</div>
+{% endblock %}
